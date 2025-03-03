@@ -1,11 +1,21 @@
 mod balances;
 mod system;
+mod utils;
+
+use crate::utils::Dispatch;
 
 mod types {
 	pub type AccountId = String;
 	pub type Balance = u128;
 	pub type BlockNumber = u32;
 	pub type Nonce = u32;
+	pub type Extrinsic = crate::utils::Extrinsic<AccountId, crate::RuntimeCall>;
+	pub type Header = crate::utils::Header<BlockNumber>;
+	pub type Block = crate::utils::Block<Header, Extrinsic>;
+}
+
+pub enum RuntimeCall {
+	BalancesTransfer { to: types::AccountId, amount: types::Balance },
 }
 
 #[derive(Debug)]
@@ -21,42 +31,77 @@ impl system::Config for Runtime {
 }
 
 impl balances::Config for Runtime {
-	type AccountId = types::AccountId;
 	type Balance = types::Balance;
+}
+
+impl crate::utils::Dispatch for Runtime {
+	type Caller = <Runtime as system::Config>::AccountId;
+	type Call = RuntimeCall;
+
+	fn dispatch(
+		&mut self,
+		caller: Self::Caller,
+		runtime_call: Self::Call,
+	) -> utils::DispatchResult {
+		match runtime_call {
+			RuntimeCall::BalancesTransfer { to, amount } => {
+				self.balances.transfer(caller, to, amount)?;
+			},
+		}
+
+		Ok(())
+	}
 }
 
 impl Runtime {
 	fn new() -> Self {
 		Self { system: system::Pallet::new(), balances: balances::Pallet::new() }
 	}
+
+	fn execute_block(&mut self, block: types::Block) -> utils::DispatchResult {
+		self.system.inc_block_number();
+
+		if block.header.block_number != self.system.block_number() {
+			return Err("block number does not match what is expected");
+		}
+
+		for (i, utils::Extrinsic { caller, call }) in block.extrinsics.into_iter().enumerate() {
+			self.system.inc_nonce(&caller);
+			let _res = self.dispatch(caller, call).map_err(|e| {
+				eprintln!(
+					"Extrinsic Error\n\tBlock Number: {}\n\tExtrinsic Number: {}\n\tError: {}",
+					block.header.block_number, i, e
+				)
+			});
+		}
+
+		Ok(())
+	}
 }
 
 fn main() {
 	let mut runtime = Runtime::new();
-	let kurniadi = "kurniadi".to_string();
-	let ahmad = "ahmad".to_string();
-	let wijaya = "wijaya".to_string();
+	let kurniadi = "Kurniadi".to_string();
+	let ahmad = "Ahmad".to_string();
+	let wijaya = "Wijaya".to_string();
 
 	runtime.balances.set_balance(&kurniadi, 200000);
-	runtime.system.inc_block_number();
-	runtime.system.inc_nonce(&kurniadi);
 
-	assert_eq!(runtime.system.block_number(), 1);
+	let block_1 = types::Block {
+		header: utils::Header { block_number: 1 },
+		extrinsics: vec![
+			utils::Extrinsic {
+				caller: kurniadi.clone(),
+				call: RuntimeCall::BalancesTransfer { to: ahmad, amount: 1250 },
+			},
+			utils::Extrinsic {
+				caller: kurniadi,
+				call: RuntimeCall::BalancesTransfer { to: wijaya, amount: 20000 },
+			},
+		],
+	};
 
-	let _res = runtime
-		.balances
-		.transfer(kurniadi.clone(), ahmad, 10000)
-		.map_err(|e| eprintln!("{}", e));
+	runtime.execute_block(block_1).expect("invalid block");
 
-	runtime.system.inc_nonce(&kurniadi);
-
-	let _res = runtime
-		.balances
-		.transfer(kurniadi, wijaya, 50000)
-		.map_err(|e| eprintln!("{}", e));
-
-	let current_balance = runtime.balances.balance(&"kurniadi".to_string());
-
-	println!("Kurniadi current balances: {}", current_balance);
 	println!("{:#?}", runtime);
 }
