@@ -1,4 +1,5 @@
 mod balances;
+mod proof_of_existence;
 mod system;
 mod utils;
 
@@ -12,16 +13,19 @@ mod types {
 	pub type Extrinsic = crate::utils::Extrinsic<AccountId, crate::RuntimeCall>;
 	pub type Header = crate::utils::Header<BlockNumber>;
 	pub type Block = crate::utils::Block<Header, Extrinsic>;
+	pub type Content = &'static str;
 }
 
 #[derive(Debug)]
 pub struct Runtime {
 	system: system::Pallet<Self>,
 	balances: balances::Pallet<Self>,
+	proof_of_existence: proof_of_existence::Pallet<Self>,
 }
 
 pub enum RuntimeCall {
 	Balances(balances::Call<Runtime>),
+	ProofOfExistence(proof_of_existence::Call<Runtime>),
 }
 
 impl system::Config for Runtime {
@@ -32,6 +36,10 @@ impl system::Config for Runtime {
 
 impl balances::Config for Runtime {
 	type Balance = types::Balance;
+}
+
+impl proof_of_existence::Config for Runtime {
+	type Content = types::Content;
 }
 
 impl crate::utils::Dispatch for Runtime {
@@ -47,6 +55,9 @@ impl crate::utils::Dispatch for Runtime {
 			RuntimeCall::Balances(call) => {
 				self.balances.dispatch(caller, call)?;
 			},
+			RuntimeCall::ProofOfExistence(call) => {
+				self.proof_of_existence.dispatch(caller, call)?;
+			},
 		}
 
 		Ok(())
@@ -55,7 +66,11 @@ impl crate::utils::Dispatch for Runtime {
 
 impl Runtime {
 	fn new() -> Self {
-		Self { system: system::Pallet::new(), balances: balances::Pallet::new() }
+		Self {
+			system: system::Pallet::new(),
+			balances: balances::Pallet::new(),
+			proof_of_existence: proof_of_existence::Pallet::new(),
+		}
 	}
 
 	fn execute_block(&mut self, block: types::Block) -> utils::DispatchResult {
@@ -92,16 +107,60 @@ fn main() {
 		extrinsics: vec![
 			utils::Extrinsic {
 				caller: kurniadi.clone(),
-				call: RuntimeCall::Balances(balances::Call::Transfer { to: ahmad, amount: 50000 }),
+				call: RuntimeCall::Balances(balances::Call::Transfer {
+					to: ahmad.clone(),
+					amount: 50000,
+				}),
 			},
 			utils::Extrinsic {
 				caller: kurniadi,
-				call: RuntimeCall::Balances(balances::Call::Transfer { to: wijaya, amount: 20000 }),
+				call: RuntimeCall::Balances(balances::Call::Transfer {
+					to: wijaya.clone(),
+					amount: 20000,
+				}),
+			},
+		],
+	};
+
+	let block_2 = types::Block {
+		header: utils::Header { block_number: 2 },
+		extrinsics: vec![
+			utils::Extrinsic {
+				caller: ahmad.clone(),
+				call: RuntimeCall::ProofOfExistence(proof_of_existence::Call::CreateClaim {
+					claim: "Hello, world!",
+				}),
+			},
+			utils::Extrinsic {
+				caller: wijaya.clone(),
+				call: RuntimeCall::ProofOfExistence(proof_of_existence::Call::CreateClaim {
+					claim: "Hello, world!",
+				}),
+			},
+		],
+	};
+
+	let block_3 = types::Block {
+		header: utils::Header { block_number: 3 },
+		extrinsics: vec![
+			utils::Extrinsic {
+				caller: ahmad,
+				call: RuntimeCall::ProofOfExistence(proof_of_existence::Call::RevokeClaim {
+					claim: "Hello, world!",
+				}),
+			},
+			utils::Extrinsic {
+				caller: wijaya,
+				call: RuntimeCall::ProofOfExistence(proof_of_existence::Call::CreateClaim {
+					claim: "Hello, world!",
+				}),
 			},
 		],
 	};
 
 	runtime.execute_block(block_1).expect("invalid block");
+	runtime.execute_block(block_2).expect("invalid block");
+	runtime.execute_block(block_3).expect("invalid block");
 
 	println!("{:#?}", runtime);
 }
