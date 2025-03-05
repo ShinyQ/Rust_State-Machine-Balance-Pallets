@@ -14,14 +14,14 @@ mod types {
 	pub type Block = crate::utils::Block<Header, Extrinsic>;
 }
 
-pub enum RuntimeCall {
-	BalancesTransfer { to: types::AccountId, amount: types::Balance },
-}
-
 #[derive(Debug)]
 pub struct Runtime {
 	system: system::Pallet<Self>,
 	balances: balances::Pallet<Self>,
+}
+
+pub enum RuntimeCall {
+	Balances(balances::Call<Runtime>),
 }
 
 impl system::Config for Runtime {
@@ -44,8 +44,8 @@ impl crate::utils::Dispatch for Runtime {
 		runtime_call: Self::Call,
 	) -> utils::DispatchResult {
 		match runtime_call {
-			RuntimeCall::BalancesTransfer { to, amount } => {
-				self.balances.transfer(caller, to, amount)?;
+			RuntimeCall::Balances(call) => {
+				self.balances.dispatch(caller, call)?;
 			},
 		}
 
@@ -92,11 +92,11 @@ fn main() {
 		extrinsics: vec![
 			utils::Extrinsic {
 				caller: kurniadi.clone(),
-				call: RuntimeCall::BalancesTransfer { to: ahmad, amount: 1250 },
+				call: RuntimeCall::Balances(balances::Call::Transfer { to: ahmad, amount: 50000 }),
 			},
 			utils::Extrinsic {
 				caller: kurniadi,
-				call: RuntimeCall::BalancesTransfer { to: wijaya, amount: 20000 },
+				call: RuntimeCall::Balances(balances::Call::Transfer { to: wijaya, amount: 20000 }),
 			},
 		],
 	};
